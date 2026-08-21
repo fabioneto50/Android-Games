@@ -9,6 +9,7 @@ on:
   pull_request:
     paths:
       - 'MotoTraffic/**'
+      - 'staging/GameView.java.gz.b64'
       - '.github/workflows/moto-traffic.yml'
   workflow_dispatch:
 
@@ -20,8 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout source branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Restore GameView source
         if: ${{ hashFiles('MotoTraffic/app/src/main/java/com/fabioneto/androidgames/mototraffic/GameView.java') == '' }}
@@ -51,14 +54,16 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Commit restored source
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/import/moto-traffic' && hashFiles('staging/GameView.java.gz.b64') != '' }}
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/import/moto-traffic') || (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'import/moto-traffic') }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- MotoTraffic/app/src/main/java/com/fabioneto/androidgames/mototraffic/GameView.java
-          git rm -- staging/GameView.java.gz.b64
-          git commit -m "Restore Moto Traffic GameView source"
-          git push origin HEAD:import/moto-traffic
+          if [ -f staging/GameView.java.gz.b64 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- MotoTraffic/app/src/main/java/com/fabioneto/androidgames/mototraffic/GameView.java
+            git rm -- staging/GameView.java.gz.b64
+            git commit -m "Restore Moto Traffic GameView source"
+            git push origin HEAD:import/moto-traffic
+          fi
 
       - name: Prepare installable APK
         run: cp MotoTraffic/app/build/outputs/apk/debug/app-debug.apk MotoTraffic-Reborn.apk
