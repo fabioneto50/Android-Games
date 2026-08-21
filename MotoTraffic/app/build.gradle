@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace = 'com.fabioneto.androidgames.mototraffic'
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = 'com.fabioneto.androidgames.mototraffic'
+        minSdk = 23
+        targetSdk = 36
+        versionCode = 1
+        versionName = '1.0.0-reborn'
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled = false
+        }
+        release {
+            minifyEnabled = false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
