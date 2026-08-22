@@ -35,9 +35,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
@@ -49,6 +47,7 @@ jobs:
           rm -rf clinical-android/work
           mkdir -p clinical-android/work
           cat clinical-android/source/part_*.b64 | base64 --decode | tar -xzf - -C clinical-android/work
+          sed -i 's/compileSdk = 37/compileSdk = 36/' clinical-android/work/ClinicalAndroid/app/build.gradle.kts
 
       - name: Build Clinical debug APK
         working-directory: clinical-android/work/ClinicalAndroid
