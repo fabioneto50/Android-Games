@@ -1,7 +1,9 @@
-name: GRIDFLOW Godot Check
+name: GRIDFLOW Build & Deploy
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'GridFlow/**'
       - '.github/workflows/gridflow-godot-check.yml'
@@ -9,6 +11,16 @@ on:
     paths:
       - 'GridFlow/**'
       - '.github/workflows/gridflow-godot-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: gridflow-pages
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -47,14 +59,33 @@ jobs:
       - name: Export Web build
         shell: bash
         run: |
+          rm -rf GridFlow/build/web
           mkdir -p GridFlow/build/web
           godot --headless --path GridFlow --export-release Web
           test -f GridFlow/build/web/index.html
 
-      - name: Upload playable Web build
+      - name: Upload downloadable Web build
         uses: actions/upload-artifact@v4
         with:
           name: gridflow-web
           path: GridFlow/build/web
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: GridFlow/build/web
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GRIDFLOW to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
