@@ -6,8 +6,12 @@ var help_label: Label
 var toast_label: Label
 var speed_button: Button
 var pause_button: Button
+var flow_bar: ProgressBar
 var mode_buttons: Dictionary = {}
 var game_over_panel: PanelContainer
+var upgrade_panel: PanelContainer
+var upgrade_buttons: Array[Button] = []
+var _upgrade_ids: Array[String] = ["", ""]
 var _toast_tween: Tween
 
 func _ready() -> void:
@@ -18,6 +22,7 @@ func _ready() -> void:
     simulation.hud_updated.connect(_on_hud_updated)
     simulation.toast_requested.connect(_show_toast)
     simulation.game_over.connect(_on_game_over)
+    simulation.upgrade_requested.connect(_on_upgrade_requested)
 
     _set_mode("road")
     _on_hud_updated(simulation.get_snapshot())
@@ -28,81 +33,159 @@ func _build_interface() -> void:
 
     var top_panel := PanelContainer.new()
     top_panel.position = Vector2(16.0, 14.0)
-    top_panel.size = Vector2(1248.0, 66.0)
+    top_panel.size = Vector2(1248.0, 72.0)
     canvas.add_child(top_panel)
 
     var top_margin := MarginContainer.new()
-    top_margin.add_theme_constant_override("margin_left", 14)
-    top_margin.add_theme_constant_override("margin_right", 14)
+    top_margin.add_theme_constant_override("margin_left", 12)
+    top_margin.add_theme_constant_override("margin_right", 12)
     top_margin.add_theme_constant_override("margin_top", 8)
     top_margin.add_theme_constant_override("margin_bottom", 8)
     top_panel.add_child(top_margin)
 
     var top_row := HBoxContainer.new()
-    top_row.add_theme_constant_override("separation", 10)
+    top_row.add_theme_constant_override("separation", 8)
     top_margin.add_child(top_row)
 
     var title := Label.new()
-    title.text = "GRIDFLOW  /  LISBON PROTOTYPE"
-    title.add_theme_font_size_override("font_size", 18)
-    title.custom_minimum_size = Vector2(250.0, 44.0)
+    title.text = "GRIDFLOW  /  LISBON"
+    title.add_theme_font_size_override("font_size", 17)
+    title.custom_minimum_size = Vector2(190.0, 48.0)
     title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     top_row.add_child(title)
 
+    var status_column := VBoxContainer.new()
+    status_column.custom_minimum_size = Vector2(590.0, 48.0)
+    status_column.add_theme_constant_override("separation", 2)
+    top_row.add_child(status_column)
+
     status_label = Label.new()
-    status_label.custom_minimum_size = Vector2(700.0, 44.0)
-    status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    status_label.add_theme_font_size_override("font_size", 16)
-    top_row.add_child(status_label)
+    status_label.add_theme_font_size_override("font_size", 14)
+    status_label.custom_minimum_size = Vector2(590.0, 24.0)
+    status_column.add_child(status_label)
+
+    flow_bar = ProgressBar.new()
+    flow_bar.min_value = 0.0
+    flow_bar.max_value = 100.0
+    flow_bar.value = 100.0
+    flow_bar.show_percentage = false
+    flow_bar.custom_minimum_size = Vector2(590.0, 12.0)
+    status_column.add_child(flow_bar)
 
     pause_button = Button.new()
     pause_button.text = "PAUSE"
-    pause_button.custom_minimum_size = Vector2(90.0, 44.0)
+    pause_button.custom_minimum_size = Vector2(82.0, 48.0)
     pause_button.pressed.connect(_toggle_pause)
     top_row.add_child(pause_button)
 
     speed_button = Button.new()
     speed_button.text = "1x"
-    speed_button.custom_minimum_size = Vector2(70.0, 44.0)
+    speed_button.custom_minimum_size = Vector2(54.0, 48.0)
     speed_button.pressed.connect(_cycle_speed)
     top_row.add_child(speed_button)
 
+    var zoom_out := Button.new()
+    zoom_out.text = "−"
+    zoom_out.custom_minimum_size = Vector2(48.0, 48.0)
+    zoom_out.pressed.connect(func(): simulation.zoom_by(0.86))
+    top_row.add_child(zoom_out)
+
+    var zoom_in := Button.new()
+    zoom_in.text = "+"
+    zoom_in.custom_minimum_size = Vector2(48.0, 48.0)
+    zoom_in.pressed.connect(func(): simulation.zoom_by(1.16))
+    top_row.add_child(zoom_in)
+
+    var reset_view := Button.new()
+    reset_view.text = "FIT"
+    reset_view.custom_minimum_size = Vector2(62.0, 48.0)
+    reset_view.pressed.connect(simulation.reset_view)
+    top_row.add_child(reset_view)
+
     var bottom_panel := PanelContainer.new()
-    bottom_panel.position = Vector2(16.0, 640.0)
-    bottom_panel.size = Vector2(1248.0, 64.0)
+    bottom_panel.position = Vector2(16.0, 622.0)
+    bottom_panel.size = Vector2(1248.0, 82.0)
     canvas.add_child(bottom_panel)
 
     var bottom_margin := MarginContainer.new()
-    bottom_margin.add_theme_constant_override("margin_left", 12)
-    bottom_margin.add_theme_constant_override("margin_right", 12)
+    bottom_margin.add_theme_constant_override("margin_left", 10)
+    bottom_margin.add_theme_constant_override("margin_right", 10)
     bottom_margin.add_theme_constant_override("margin_top", 8)
     bottom_margin.add_theme_constant_override("margin_bottom", 8)
     bottom_panel.add_child(bottom_margin)
 
     var bottom_row := HBoxContainer.new()
-    bottom_row.add_theme_constant_override("separation", 8)
+    bottom_row.add_theme_constant_override("separation", 6)
     bottom_margin.add_child(bottom_row)
 
     _add_mode_button(bottom_row, "ROAD", "road")
     _add_mode_button(bottom_row, "ERASE", "erase")
-    _add_mode_button(bottom_row, "SIGNALS", "signal")
+    _add_mode_button(bottom_row, "LIGHT", "signal")
+    _add_mode_button(bottom_row, "ROUND", "roundabout")
+    _add_mode_button(bottom_row, "LANES", "lanes")
+    _add_mode_button(bottom_row, "1-WAY", "oneway")
+    _add_mode_button(bottom_row, "PAN", "pan")
 
     help_label = Label.new()
-    help_label.custom_minimum_size = Vector2(760.0, 44.0)
+    help_label.custom_minimum_size = Vector2(535.0, 56.0)
     help_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-    help_label.text = "Drag to build roads. Connect every new zone before demand overwhelms the network."
+    help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    help_label.add_theme_font_size_override("font_size", 13)
     bottom_row.add_child(help_label)
 
     toast_label = Label.new()
-    toast_label.position = Vector2(390.0, 96.0)
-    toast_label.size = Vector2(500.0, 42.0)
+    toast_label.position = Vector2(360.0, 98.0)
+    toast_label.size = Vector2(560.0, 42.0)
     toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     toast_label.add_theme_font_size_override("font_size", 18)
     toast_label.modulate.a = 0.0
     canvas.add_child(toast_label)
 
+    _build_upgrade_panel(canvas)
+    _build_game_over_panel(canvas)
+
+func _build_upgrade_panel(canvas: CanvasLayer) -> void:
+    upgrade_panel = PanelContainer.new()
+    upgrade_panel.position = Vector2(380.0, 208.0)
+    upgrade_panel.size = Vector2(520.0, 300.0)
+    upgrade_panel.visible = false
+    canvas.add_child(upgrade_panel)
+
+    var margin := MarginContainer.new()
+    margin.add_theme_constant_override("margin_left", 28)
+    margin.add_theme_constant_override("margin_right", 28)
+    margin.add_theme_constant_override("margin_top", 24)
+    margin.add_theme_constant_override("margin_bottom", 24)
+    upgrade_panel.add_child(margin)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 14)
+    margin.add_child(column)
+
+    var title := Label.new()
+    title.text = "WEEKLY CITY UPGRADE"
+    title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    title.add_theme_font_size_override("font_size", 24)
+    column.add_child(title)
+
+    var subtitle := Label.new()
+    subtitle.text = "Choose one resource package. The simulation is paused."
+    subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    subtitle.add_theme_font_size_override("font_size", 14)
+    column.add_child(subtitle)
+
+    for index: int in range(2):
+        var button := Button.new()
+        button.text = "UPGRADE"
+        button.custom_minimum_size = Vector2(0.0, 72.0)
+        button.add_theme_font_size_override("font_size", 16)
+        button.pressed.connect(_choose_upgrade.bind(index))
+        column.add_child(button)
+        upgrade_buttons.append(button)
+
+func _build_game_over_panel(canvas: CanvasLayer) -> void:
     game_over_panel = PanelContainer.new()
     game_over_panel.position = Vector2(420.0, 240.0)
     game_over_panel.size = Vector2(440.0, 220.0)
@@ -143,22 +226,31 @@ func _add_mode_button(parent: HBoxContainer, text: String, mode: String) -> void
     var button := Button.new()
     button.text = text
     button.toggle_mode = true
-    button.custom_minimum_size = Vector2(110.0, 44.0)
-    button.pressed.connect(func(): _set_mode(mode))
+    button.custom_minimum_size = Vector2(84.0, 56.0)
+    button.add_theme_font_size_override("font_size", 13)
+    button.pressed.connect(_set_mode.bind(mode))
     parent.add_child(button)
     mode_buttons[mode] = button
 
 func _set_mode(mode: String) -> void:
     simulation.set_mode(mode)
-    for raw_mode in mode_buttons.keys():
-        var button: Button = mode_buttons[raw_mode]
-        button.button_pressed = raw_mode == mode
+    for raw_mode: Variant in mode_buttons.keys():
+        var button: Button = mode_buttons[raw_mode] as Button
+        button.button_pressed = String(raw_mode) == mode
 
     match mode:
         "erase":
-            help_label.text = "Drag over roads to remove them. Removed road segments are refunded."
+            help_label.text = "Drag over roads to remove them. Roads and installed upgrades are refunded."
         "signal":
-            help_label.text = "Tap a 3-way or 4-way junction to install or remove a traffic signal."
+            help_label.text = "Tap a 3/4-way junction to install a signal. Signals alternate N/S and E/W flow."
+        "roundabout":
+            help_label.text = "Tap a 3/4-way junction to install a roundabout and increase junction capacity."
+        "lanes":
+            help_label.text = "Tap a road to widen it from 1 to 2 to 3 lanes. Wider roads carry more traffic."
+        "oneway":
+            help_label.text = "Tap repeatedly to cycle valid one-way directions; the routing engine respects them."
+        "pan":
+            help_label.text = "Drag the map to move around. Use +/− or the mouse wheel/pinch gesture to zoom."
         _:
             help_label.text = "Drag to build roads. Connect every new zone before demand overwhelms the network."
 
@@ -173,17 +265,22 @@ func _cycle_speed() -> void:
 func _on_hud_updated(snapshot: Dictionary) -> void:
     if status_label == null:
         return
-    status_label.text = "FLOW %d%%   WEEK %d   ROADS %d   POP %d   CARS %d   TRIPS %d   SCORE %d" % [
-        snapshot.flow,
-        snapshot.week,
-        snapshot.roads,
-        snapshot.population,
-        snapshot.vehicles,
-        snapshot.trips,
-        snapshot.score
+
+    status_label.text = "FLOW %d%%  W%d  ROAD %d  SIG %d  RBT %d  LANE %d  POP %d  CARS %d  SCORE %d" % [
+        int(snapshot.flow),
+        int(snapshot.week),
+        int(snapshot.roads),
+        int(snapshot.signals),
+        int(snapshot.roundabouts),
+        int(snapshot.lane_upgrades),
+        int(snapshot.population),
+        int(snapshot.vehicles),
+        int(snapshot.score)
     ]
-    speed_button.text = "%dx" % snapshot.speed
-    pause_button.text = "RESUME" if snapshot.paused else "PAUSE"
+    flow_bar.value = float(snapshot.flow)
+    speed_button.text = "%dx" % int(snapshot.speed)
+    pause_button.text = "RESUME" if bool(snapshot.paused) else "PAUSE"
+    pause_button.disabled = bool(snapshot.upgrade_pending)
 
 func _show_toast(message: String) -> void:
     toast_label.text = message
@@ -194,12 +291,32 @@ func _show_toast(message: String) -> void:
     _toast_tween.tween_interval(1.25)
     _toast_tween.tween_property(toast_label, "modulate:a", 0.0, 0.45)
 
+func _on_upgrade_requested(options: Array[Dictionary]) -> void:
+    if options.size() < 2:
+        return
+
+    for index: int in range(2):
+        var option: Dictionary = options[index]
+        _upgrade_ids[index] = String(option.get("id", "roads"))
+        var title: String = String(option.get("title", "UPGRADE"))
+        var detail: String = String(option.get("detail", ""))
+        upgrade_buttons[index].text = "%s\n%s" % [title, detail]
+
+    upgrade_panel.visible = true
+
+func _choose_upgrade(index: int) -> void:
+    if index < 0 or index >= _upgrade_ids.size():
+        return
+    upgrade_panel.visible = false
+    simulation.apply_upgrade(_upgrade_ids[index])
+
 func _on_game_over(snapshot: Dictionary) -> void:
+    upgrade_panel.visible = false
     game_over_panel.visible = true
-    var stats: Label = game_over_panel.find_child("GameStats", true, false)
+    var stats: Label = game_over_panel.find_child("GameStats", true, false) as Label
     stats.text = "Population %d  |  Trips %d  |  Week %d\nFinal score: %d" % [
-        snapshot.population,
-        snapshot.trips,
-        snapshot.week,
-        snapshot.score
+        int(snapshot.population),
+        int(snapshot.trips),
+        int(snapshot.week),
+        int(snapshot.score)
     ]
