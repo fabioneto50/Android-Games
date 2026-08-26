@@ -28,6 +28,7 @@ func setup(
     is_emergency = p_is_emergency
     emergency_deadline = p_emergency_deadline
     base_speed = 118.0 if is_emergency else 86.0
+    z_index = 20
     if path_points.is_empty():
         completed = true
         return
@@ -109,22 +110,18 @@ func _draw() -> void:
     var length: float = 17.0 if is_emergency else 15.0
     var width: float = 9.5 if is_emergency else 8.2
 
-    # Soft shadow creates separation from the road surface.
     draw_rect(Rect2(Vector2(-length * 0.5 + 1.6, -width * 0.5 + 2.0), Vector2(length, width)), Color(0.0, 0.0, 0.0, 0.22), true)
 
-    # Wheels.
     var wheel_color := Color("#161D20")
     draw_rect(Rect2(Vector2(-5.2, -width * 0.5 - 1.1), Vector2(4.0, 2.0)), wheel_color, true)
     draw_rect(Rect2(Vector2(2.0, -width * 0.5 - 1.1), Vector2(4.0, 2.0)), wheel_color, true)
     draw_rect(Rect2(Vector2(-5.2, width * 0.5 - 0.9), Vector2(4.0, 2.0)), wheel_color, true)
     draw_rect(Rect2(Vector2(2.0, width * 0.5 - 0.9), Vector2(4.0, 2.0)), wheel_color, true)
 
-    # Main body and subtle highlight.
     var body_rect := Rect2(Vector2(-length * 0.5, -width * 0.5), Vector2(length, width))
     draw_rect(body_rect, vehicle_color, true)
     draw_rect(Rect2(Vector2(-length * 0.5 + 1.0, -width * 0.5 + 0.8), Vector2(length - 2.0, 1.2)), vehicle_color.lightened(0.28), true)
 
-    # Cabin / glass.
     var glass := Color(0.70, 0.86, 0.90, 0.92)
     draw_colored_polygon(PackedVector2Array([
         Vector2(-1.5, -width * 0.5 + 1.4),
@@ -134,7 +131,6 @@ func _draw() -> void:
     ]), glass)
     draw_line(Vector2(1.0, -width * 0.5 + 1.4), Vector2(1.0, width * 0.5 - 1.4), Color(0.15, 0.25, 0.28, 0.35), 1.0, true)
 
-    # Head/tail lights make movement direction immediately legible.
     draw_circle(Vector2(length * 0.5 - 0.7, -2.3), 1.0, Color("#FFF0B0"))
     draw_circle(Vector2(length * 0.5 - 0.7, 2.3), 1.0, Color("#FFF0B0"))
     draw_circle(Vector2(-length * 0.5 + 0.6, -2.2), 0.85, Color("#E45A58"))
@@ -144,7 +140,6 @@ func _draw() -> void:
         draw_circle(Vector2(-length * 0.5 - 2.0, 0.0), 1.6, Color("#F0C46B"))
 
     if is_emergency:
-        # Ambulance identity and animated emergency lights.
         draw_rect(Rect2(Vector2(-3.2, -1.0), Vector2(6.4, 2.0)), Color.WHITE, true)
         draw_rect(Rect2(Vector2(-1.0, -3.2), Vector2(2.0, 6.4)), Color.WHITE, true)
         var flash: bool = int(emergency_elapsed * 5.5) % 2 == 0
