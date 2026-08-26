@@ -6,6 +6,10 @@ const ROTUNDA_ILHA := Color("#86A977")
 const CEDENCIA := Color("#F1EEE6")
 const LIGACAO_PISO := Color("#4A575A")
 const LIGACAO_BORDA := Color("#D2CFC5")
+const ROTUNDA_RAIO_EXTERIOR := 31.0
+const ROTUNDA_RAIO_PISTA := 27.5
+const ROTUNDA_RAIO_ILHA := 14.0
+const ROTUNDA_RAIO_TRAJETO := 21.5
 
 func _build_intro() -> void:
     _intro_layer = CanvasLayer.new()
@@ -77,7 +81,7 @@ func _build_intro() -> void:
     column.add_child(features)
 
     var play := Button.new()
-    play.text = "COMEÇAR EM LISBOA"
+    play.text = "CONTINUAR EM LISBOA"
     play.custom_minimum_size = Vector2(0.0, 58.0)
     play.add_theme_font_size_override("font_size", 15)
     GridFlowUITheme.apply_button(play, true)
@@ -85,7 +89,7 @@ func _build_intro() -> void:
     column.add_child(play)
 
     var hint := Label.new()
-    hint.text = "Dica: cria percursos alternativos antes de começar a hora de ponta."
+    hint.text = "Dica: as rotundas grandes mantêm o fluxo sem semáforos, mas é preciso deixar espaço à volta."
     hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     hint.add_theme_font_size_override("font_size", 10)
     hint.add_theme_color_override("font_color", Color("#718483"))
@@ -124,16 +128,24 @@ func _draw_roundabouts_signals_and_directions() -> void:
         var cell: Vector2i = raw_cell as Vector2i
         var center: Vector2 = simulation.cell_to_world(cell)
 
-        draw_circle(center + Vector2(1.5, 2.5), 20.0, Color(0.0, 0.0, 0.0, 0.18))
-        draw_circle(center, 19.0, Color("#202D31"))
-        draw_circle(center, 16.5, Color("#334248"))
-        draw_circle(center, 8.5, ROTUNDA_ILHA.darkened(0.16))
-        draw_circle(center, 6.5, ROTUNDA_ILHA)
-        draw_circle(center + Vector2(-1.5, -1.8), 3.0, Color("#6F9D73"))
+        # Rotunda muito maior: o círculo tapa completamente o antigo cruzamento
+        # e deixa uma pista circular larga e legível.
+        draw_circle(center + Vector2(2.5, 4.0), ROTUNDA_RAIO_EXTERIOR + 2.0, Color(0.0, 0.0, 0.0, 0.20))
+        draw_circle(center, ROTUNDA_RAIO_EXTERIOR, Color("#202D31"))
+        draw_circle(center, ROTUNDA_RAIO_PISTA, Color("#334248"))
 
-        _draw_circular_arrow(center, -0.20)
-        _draw_circular_arrow(center, 1.90)
-        _draw_circular_arrow(center, 3.98)
+        # Linha circular de circulação que coincide com a trajetória dos carros.
+        draw_arc(center, ROTUNDA_RAIO_TRAJETO, 0.0, TAU, 56, Color(0.88, 0.88, 0.80, 0.42), 1.2, true)
+
+        draw_circle(center, ROTUNDA_RAIO_ILHA + 2.0, Color("#253236"))
+        draw_circle(center, ROTUNDA_RAIO_ILHA, ROTUNDA_ILHA.darkened(0.12))
+        draw_circle(center, ROTUNDA_RAIO_ILHA - 2.5, ROTUNDA_ILHA)
+        draw_circle(center + Vector2(-4.0, -3.0), 4.5, Color("#6F9D73"))
+        draw_circle(center + Vector2(4.5, 3.5), 3.3, Color("#7FAF80"))
+
+        _draw_circular_arrow(center, -0.15)
+        _draw_circular_arrow(center, 1.95)
+        _draw_circular_arrow(center, 4.05)
 
         for grid_direction: Vector2i in simulation.DIRECTIONS:
             if not simulation.road_cells.has(cell + grid_direction):
@@ -170,26 +182,26 @@ func _draw_roundabouts_signals_and_directions() -> void:
             draw_arc(simulation.cell_to_world(cell), 15.0 * pulse, 0.0, TAU, 24, Color("#5FD39A"), 3.0, true)
 
 func _draw_circular_arrow(center: Vector2, start_angle: float) -> void:
-    var radius: float = 12.5
-    var end_angle: float = start_angle - 1.10
-    draw_arc(center, radius, end_angle, start_angle, 14, ROTUNDA_SETAS, 2.0, true)
+    var radius: float = ROTUNDA_RAIO_TRAJETO
+    var end_angle: float = start_angle - 0.86
+    draw_arc(center, radius, end_angle, start_angle, 18, ROTUNDA_SETAS, 2.6, true)
 
     var tip := center + Vector2(cos(end_angle), sin(end_angle)) * radius
     var tangent := Vector2(-sin(end_angle), cos(end_angle))
     var radial := Vector2(cos(end_angle), sin(end_angle))
     draw_colored_polygon(PackedVector2Array([
         tip,
-        tip + tangent * 4.0 + radial * 1.5,
-        tip + tangent * 1.0 - radial * 4.0
+        tip + tangent * 5.5 + radial * 2.0,
+        tip + tangent * 1.0 - radial * 5.0
     ]), ROTUNDA_SETAS)
 
 func _draw_yield_mark(center: Vector2, grid_direction: Vector2i) -> void:
     var direction := Vector2(float(grid_direction.x), float(grid_direction.y))
     var normal := Vector2(-direction.y, direction.x)
-    var base_center := center + direction * 24.0
-    var tip := center + direction * 18.0
+    var base_center := center + direction * 35.0
+    var tip := center + direction * 28.0
     draw_colored_polygon(PackedVector2Array([
         tip,
-        base_center + normal * 4.0,
-        base_center - normal * 4.0
+        base_center + normal * 5.0,
+        base_center - normal * 5.0
     ]), CEDENCIA)
