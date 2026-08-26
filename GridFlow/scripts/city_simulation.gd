@@ -27,6 +27,7 @@ const ONEWAY_COLOR := Color("#F4C95D")
 const ROUNDABOUT_COLOR := Color("#82A7A6")
 const WATER_COLOR := Color("#86B8C9")
 const BRIDGE_COLOR := Color("#B7A47D")
+const GREEN_CORRIDOR_COLOR := Color("#60C689")
 
 var graph := RoadGraph.new()
 var road_cells: Dictionary = {}
@@ -38,6 +39,7 @@ var buildings: Array[CityBuilding] = []
 var vehicles: Array[VehicleAgent] = []
 var occupancy: Dictionary = {}
 var rng := RandomNumberGenerator.new()
+var emergency_manager: EmergencyManager
 
 var interaction_mode: String = "road"
 var paused: bool = false
@@ -69,6 +71,7 @@ var _hud_timer: float = 0.0
 
 func _ready() -> void:
     rng.randomize()
+    emergency_manager = EmergencyManager.new(self)
     _create_starter_city()
     queue_redraw()
     _emit_hud()
@@ -86,6 +89,7 @@ func _process(delta: float) -> void:
     _hud_timer += delta
 
     _rebuild_occupancy()
+    emergency_manager.tick(sim_delta)
 
     if _growth_timer >= 9.0:
         _growth_timer = 0.0
@@ -146,7 +150,23 @@ func reset_view() -> void:
     scale = Vector2.ONE
     position = Vector2.ZERO
 
+func activate_green_corridor() -> void:
+    emergency_manager.activate_green_corridor()
+
 func get_snapshot() -> Dictionary:
+    var emergency_active: int = 0
+    var emergency_completed: int = 0
+    var emergency_failed: int = 0
+    var green_charges: int = 0
+    if emergency_manager != null:
+        emergency_active = emergency_manager.active.size()
+        emergency_completed = emergency_manager.completed_count
+        emergency_failed = emergency_manager.failed_count
+        green_charges = emergency_manager.green_charges
+
+    var score_value: int = completed_trips * 10 + (week - 1) * 100 + emergency_completed * 500 - emergency_failed * 250
+    score_value = maxi(0, score_value)
+
     return {
         "flow": int(round(flow_score)),
         "week": week,
@@ -157,6 +177,10 @@ func get_snapshot() -> Dictionary:
         "roundabouts": roundabout_budget,
         "lane_upgrades": lane_upgrade_budget,
         "bridges": bridge_budget,
+        "green": green_charges,
+        "emergency_active": emergency_active,
+        "emergency_completed": emergency_completed,
+        "emergency_failed": emergency_failed,
         "trips": completed_trips,
         "pending": pending_demand,
         "vehicles": vehicles.size(),
@@ -166,7 +190,7 @@ func get_snapshot() -> Dictionary:
         "mode": interaction_mode,
         "zoom": view_zoom,
         "upgrade_pending": awaiting_upgrade,
-        "score": completed_trips * 10 + (week - 1) * 100
+        "score": score_value
     }
 
 func world_to_cell(world_position: Vector2) -> Vector2i:
@@ -204,8 +228,10 @@ func get_speed_factor(cell: Vector2i, density: int) -> float:
         factor = minf(1.12, factor + 0.08)
     return factor
 
-func can_vehicle_enter(from_world: Vector2, to_world: Vector2) -> bool:
+func can_vehicle_enter(vehicle: VehicleAgent, from_world: Vector2, to_world: Vector2) -> bool:
     var target_cell: Vector2i = world_to_cell(to_world)
+    if emergency_manager != null and emergency_manager.allows_signal_bypass(vehicle, target_cell):
+        return true
     if not traffic_lights.has(target_cell):
         return true
 
@@ -221,6 +247,15 @@ func can_vehicle_enter(from_world: Vector2, to_world: Vector2) -> bool:
 func vehicle_completed(vehicle: VehicleAgent) -> void:
     completed_trips += 1
     pending_demand = maxi(0, pending_demand - 1)
+    if emergency_manager != null and vehicle.is_emergency:
+        emergency_manager.on_vehicle_completed(vehicle)
+    vehicles.erase(vehicle)
+    vehicle.queue_free()
+
+func emergency_vehicle_timed_out(vehicle: VehicleAgent) -> void:
+    if emergency_manager != null:
+        emergency_manager.on_vehicle_failed(vehicle)
+    pending_demand += 3
     vehicles.erase(vehicle)
     vehicle.queue_free()
 
@@ -228,12 +263,18 @@ func reroute_vehicle(vehicle: VehicleAgent) -> void:
     var start_cell: Vector2i = _nearest_road_cell_to_world(vehicle.position)
     var destination_access: Vector2i = _access_road_cell(vehicle.destination_building_cell)
     if start_cell == INVALID_CELL or destination_access == INVALID_CELL:
-        _fail_trip(vehicle)
+        if vehicle.is_emergency:
+            emergency_vehicle_timed_out(vehicle)
+        else:
+            _fail_trip(vehicle)
         return
 
     var path_cells: Array[Vector2i] = graph.get_path_cells(start_cell, destination_access)
     if path_cells.is_empty():
-        _fail_trip(vehicle)
+        if vehicle.is_emergency:
+            emergency_vehicle_timed_out(vehicle)
+        else:
+            _fail_trip(vehicle)
         return
 
     var points: Array[Vector2] = []
@@ -261,6 +302,9 @@ func apply_upgrade(upgrade_id: String) -> void:
         "bridge":
             bridge_budget += 1
             toast_requested.emit("Upgrade: +1 bridge")
+        "green":
+            emergency_manager.green_charges += 1
+            toast_requested.emit("Upgrade: +1 Green Corridor")
         _:
             road_budget += 20
             toast_requested.emit("Upgrade: +20 road segments")
@@ -283,7 +327,8 @@ func _build_upgrade_options() -> Array[Dictionary]:
         {"id": "signals", "title": "SMART SIGNALS", "detail": "+2 traffic signals"},
         {"id": "roundabout", "title": "ROUNDABOUT", "detail": "+1 roundabout"},
         {"id": "lanes", "title": "ROAD WIDENING", "detail": "+2 lane upgrades"},
-        {"id": "bridge", "title": "RIVER CROSSING", "detail": "+1 bridge over the Tagus"}
+        {"id": "bridge", "title": "RIVER CROSSING", "detail": "+1 bridge over the Tagus"},
+        {"id": "green", "title": "GREEN CORRIDOR", "detail": "+1 emergency priority charge"}
     ]
     pool.shuffle()
     return [pool[0], pool[1]]
@@ -710,7 +755,11 @@ func _update_flow(sim_delta: float) -> void:
         if count > capacity:
             overloaded_cells += count - capacity
 
-    var penalty: float = float(pending_demand) * 2.7 + float(waiting_count) * 0.75 + float(overloaded_cells) * 1.8
+    var emergency_penalty: float = 0.0
+    if emergency_manager != null:
+        emergency_penalty = float(emergency_manager.failed_count) * 1.5
+
+    var penalty: float = float(pending_demand) * 2.7 + float(waiting_count) * 0.75 + float(overloaded_cells) * 1.8 + emergency_penalty
     flow_score = clampf(100.0 - penalty, 0.0, 100.0)
 
     if flow_score < 20.0:
@@ -792,6 +841,11 @@ func _draw() -> void:
             var segment_color: Color = BRIDGE_COLOR if bridge_cells.has(cell) or bridge_cells.has(neighbor) else ROAD_COLOR
             draw_line(point, neighbor_point, segment_color, road_width, true)
             draw_line(point, neighbor_point, ROAD_MARKING, 1.3, true)
+
+    if emergency_manager != null and emergency_manager.green_timer > 0.0:
+        for raw_cell: Variant in emergency_manager.green_cells.keys():
+            var green_cell: Vector2i = raw_cell as Vector2i
+            draw_arc(cell_to_world(green_cell), 15.0, 0.0, TAU, 24, GREEN_CORRIDOR_COLOR, 3.5, true)
 
     for raw_cell: Variant in bridge_cells.keys():
         var cell: Vector2i = raw_cell as Vector2i
