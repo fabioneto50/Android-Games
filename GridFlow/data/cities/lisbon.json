@@ -1,0 +1,20 @@
+{
+  "id": "lisbon",
+  "displayName": "Lisbon",
+  "country": "Portugal",
+  "difficulty": 1,
+  "theme": "atlantic",
+  "traits": ["river", "bridges", "hills", "dense_center"],
+  "startingResources": {
+    "roadSegments": 120,
+    "trafficLights": 0,
+    "roundabouts": 0,
+    "bridges": 1
+  },
+  "futureMechanics": [
+    "Tagus river crossings",
+    "bridge bottlenecks",
+    "historic-center narrow streets",
+    "rush-hour commuter waves"
+  ]
+}

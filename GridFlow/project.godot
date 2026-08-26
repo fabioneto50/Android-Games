@@ -1,0 +1,27 @@
+; GRIDFLOW - Godot 4 project
+config_version=5
+
+[application]
+
+config/name="GRIDFLOW"
+config/description="Minimal urban traffic strategy game"
+run/main_scene="res://scenes/Main.tscn"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+window/handheld/orientation=1
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.953, 0.945, 0.91, 1)
+
+[application_run]
+
+disable_stdout=false

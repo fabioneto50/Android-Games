@@ -1,0 +1,82 @@
+extends Node2D
+class_name VehicleAgent
+
+var path_points: Array[Vector2] = []
+var path_index: int = 1
+var destination_building_cell := Vector2i.ZERO
+var simulation: Node
+var base_speed: float = 86.0
+var waiting: bool = false
+var completed: bool = false
+var vehicle_color := Color("#415A77")
+
+func setup(points: Array[Vector2], destination_cell: Vector2i, p_simulation: Node, p_color: Color = Color("#415A77")) -> void:
+    path_points = points.duplicate()
+    destination_building_cell = destination_cell
+    simulation = p_simulation
+    vehicle_color = p_color
+    if path_points.is_empty():
+        completed = true
+        return
+    position = path_points[0]
+    path_index = 1
+    queue_redraw()
+
+func replace_path(points: Array[Vector2]) -> void:
+    var replacement: Array[Vector2] = [position]
+    for point in points:
+        if replacement[-1].distance_to(point) > 1.0:
+            replacement.append(point)
+    path_points = replacement
+    path_index = 1
+
+func _process(delta: float) -> void:
+    if completed or simulation == null:
+        return
+    if simulation.paused:
+        waiting = false
+        return
+
+    if path_index >= path_points.size():
+        _finish_trip()
+        return
+
+    var target := path_points[path_index]
+    var target_cell: Vector2i = simulation.world_to_cell(target)
+
+    if not simulation.is_road_cell(target_cell):
+        simulation.reroute_vehicle(self)
+        return
+
+    var allowed: bool = simulation.can_vehicle_enter(position, target)
+    var density: int = simulation.get_occupancy(target_cell)
+    var speed_factor := clamp(1.0 - max(0, density - 1) * 0.17, 0.22, 1.0)
+
+    if not allowed or density >= 6:
+        waiting = true
+        return
+
+    waiting = false
+    var direction := (target - position).normalized()
+    if direction.length_squared() > 0.0:
+        rotation = direction.angle()
+
+    var travel := base_speed * speed_factor * delta * simulation.time_scale
+    position = position.move_toward(target, travel)
+
+    if position.distance_to(target) <= 1.0:
+        position = target
+        path_index += 1
+        if path_index >= path_points.size():
+            _finish_trip()
+
+func _finish_trip() -> void:
+    if completed:
+        return
+    completed = true
+    if simulation != null:
+        simulation.vehicle_completed(self)
+
+func _draw() -> void:
+    draw_rect(Rect2(Vector2(-7.0, -4.0), Vector2(14.0, 8.0)), vehicle_color, true)
+    draw_rect(Rect2(Vector2(0.0, -3.0), Vector2(4.0, 6.0)), Color(0.88, 0.93, 0.95, 0.85), true)

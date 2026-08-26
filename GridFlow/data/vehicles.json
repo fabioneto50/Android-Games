@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "vehicles": [
+    {"id": "car", "speed": 86, "capacity": 2, "priority": 1, "spawnWeight": 70},
+    {"id": "taxi", "speed": 90, "capacity": 3, "priority": 1, "spawnWeight": 12},
+    {"id": "van", "speed": 72, "capacity": 4, "priority": 1, "spawnWeight": 10},
+    {"id": "truck", "speed": 58, "capacity": 1, "priority": 1, "spawnWeight": 6},
+    {"id": "ambulance", "speed": 110, "capacity": 1, "priority": 10, "spawnWeight": 2}
+  ]
+}
