@@ -1,6 +1,9 @@
 extends VehicleAgent
 class_name VehicleAgentPT
 
+const ROUNDABOUT_DRIVE_RADIUS := 21.5
+const ROUNDABOUT_MIN_STEPS := 8
+
 func setup(
     points: Array[Vector2],
     destination_cell: Vector2i,
@@ -36,20 +39,32 @@ func _expand_roundabouts(points: Array[Vector2], p_simulation: Node) -> Array[Ve
             continue
 
         var center: Vector2 = point
-        var prev: Vector2 = points[index - 1]
-        var next: Vector2 = points[index + 1]
-        var entry_angle: float = (prev - center).angle()
-        var exit_angle: float = (next - center).angle()
+        var previous_point: Vector2 = points[index - 1]
+        var next_point: Vector2 = points[index + 1]
+        var entry_direction: Vector2 = (previous_point - center).normalized()
+        var exit_direction: Vector2 = (next_point - center).normalized()
 
-        while exit_angle > entry_angle:
+        if entry_direction.length_squared() <= 0.0 or exit_direction.length_squared() <= 0.0:
+            result.append(point)
+            continue
+
+        var entry_angle: float = entry_direction.angle()
+        var exit_angle: float = exit_direction.angle()
+
+        # Em Portugal circula-se pela direita e a trajetória visual da rotunda
+        # neste sistema de coordenadas segue no sentido anti-horário do ecrã.
+        while exit_angle >= entry_angle:
             exit_angle -= TAU
 
-        var radius: float = 10.5
-        var steps: int = 4
+        var arc_size: float = absf(exit_angle - entry_angle)
+        var steps: int = maxi(ROUNDABOUT_MIN_STEPS, int(ceil(arc_size / 0.22)))
+
+        # O carro entra tangente à rotunda e segue vários pontos do arco,
+        # deixando de atravessar o centro do cruzamento.
         for step: int in range(steps + 1):
             var t: float = float(step) / float(steps)
             var angle: float = lerpf(entry_angle, exit_angle, t)
-            result.append(center + Vector2(cos(angle), sin(angle)) * radius)
+            result.append(center + Vector2(cos(angle), sin(angle)) * ROUNDABOUT_DRIVE_RADIUS)
 
     result.append(points[-1])
     return result
