@@ -3,12 +3,12 @@ class_name VehicleAgent
 
 var path_points: Array[Vector2] = []
 var path_index: int = 1
-var destination_building_cell := Vector2i.ZERO
+var destination_building_cell: Vector2i = Vector2i.ZERO
 var simulation: Node
 var base_speed: float = 86.0
 var waiting: bool = false
 var completed: bool = false
-var vehicle_color := Color("#415A77")
+var vehicle_color: Color = Color("#415A77")
 
 func setup(points: Array[Vector2], destination_cell: Vector2i, p_simulation: Node, p_color: Color = Color("#415A77")) -> void:
     path_points = points.duplicate()
@@ -24,7 +24,7 @@ func setup(points: Array[Vector2], destination_cell: Vector2i, p_simulation: Nod
 
 func replace_path(points: Array[Vector2]) -> void:
     var replacement: Array[Vector2] = [position]
-    for point in points:
+    for point: Vector2 in points:
         if replacement[-1].distance_to(point) > 1.0:
             replacement.append(point)
     path_points = replacement
@@ -33,7 +33,7 @@ func replace_path(points: Array[Vector2]) -> void:
 func _process(delta: float) -> void:
     if completed or simulation == null:
         return
-    if simulation.paused:
+    if simulation.paused or simulation.awaiting_upgrade:
         waiting = false
         return
 
@@ -50,9 +50,10 @@ func _process(delta: float) -> void:
 
     var allowed: bool = simulation.can_vehicle_enter(position, target)
     var density: int = simulation.get_occupancy(target_cell)
-    var speed_factor: float = clampf(1.0 - float(maxi(0, density - 1)) * 0.17, 0.22, 1.0)
+    var capacity: int = simulation.get_cell_capacity(target_cell)
+    var speed_factor: float = simulation.get_speed_factor(target_cell, density)
 
-    if not allowed or density >= 6:
+    if not allowed or density >= capacity + 2:
         waiting = true
         return
 
@@ -61,7 +62,7 @@ func _process(delta: float) -> void:
     if direction.length_squared() > 0.0:
         rotation = direction.angle()
 
-    var travel: float = base_speed * speed_factor * delta * float(simulation.time_scale)
+    var travel: float = base_speed * speed_factor * delta * simulation.time_scale
     position = position.move_toward(target, travel)
 
     if position.distance_to(target) <= 1.0:
