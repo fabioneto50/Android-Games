@@ -48,20 +48,20 @@ func _build_interface() -> void:
     top_margin.add_child(top_row)
 
     var title := Label.new()
-    title.text = "GRIDFLOW  /  LISBON"
+    title.text = "GRIDFLOW / LISBON"
     title.add_theme_font_size_override("font_size", 17)
-    title.custom_minimum_size = Vector2(190.0, 48.0)
+    title.custom_minimum_size = Vector2(176.0, 48.0)
     title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     top_row.add_child(title)
 
     var status_column := VBoxContainer.new()
-    status_column.custom_minimum_size = Vector2(590.0, 48.0)
+    status_column.custom_minimum_size = Vector2(604.0, 48.0)
     status_column.add_theme_constant_override("separation", 2)
     top_row.add_child(status_column)
 
     status_label = Label.new()
-    status_label.add_theme_font_size_override("font_size", 14)
-    status_label.custom_minimum_size = Vector2(590.0, 24.0)
+    status_label.add_theme_font_size_override("font_size", 13)
+    status_label.custom_minimum_size = Vector2(604.0, 24.0)
     status_column.add_child(status_label)
 
     flow_bar = ProgressBar.new()
@@ -69,7 +69,7 @@ func _build_interface() -> void:
     flow_bar.max_value = 100.0
     flow_bar.value = 100.0
     flow_bar.show_percentage = false
-    flow_bar.custom_minimum_size = Vector2(590.0, 12.0)
+    flow_bar.custom_minimum_size = Vector2(604.0, 12.0)
     status_column.add_child(flow_bar)
 
     pause_button = Button.new()
@@ -115,7 +115,7 @@ func _build_interface() -> void:
     bottom_panel.add_child(bottom_margin)
 
     var bottom_row := HBoxContainer.new()
-    bottom_row.add_theme_constant_override("separation", 6)
+    bottom_row.add_theme_constant_override("separation", 5)
     bottom_margin.add_child(bottom_row)
 
     _add_mode_button(bottom_row, "ROAD", "road")
@@ -124,19 +124,20 @@ func _build_interface() -> void:
     _add_mode_button(bottom_row, "ROUND", "roundabout")
     _add_mode_button(bottom_row, "LANES", "lanes")
     _add_mode_button(bottom_row, "1-WAY", "oneway")
+    _add_mode_button(bottom_row, "BRIDGE", "bridge")
     _add_mode_button(bottom_row, "PAN", "pan")
 
     help_label = Label.new()
-    help_label.custom_minimum_size = Vector2(535.0, 56.0)
+    help_label.custom_minimum_size = Vector2(565.0, 56.0)
     help_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
     help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    help_label.add_theme_font_size_override("font_size", 13)
+    help_label.add_theme_font_size_override("font_size", 12)
     bottom_row.add_child(help_label)
 
     toast_label = Label.new()
-    toast_label.position = Vector2(360.0, 98.0)
-    toast_label.size = Vector2(560.0, 42.0)
+    toast_label.position = Vector2(340.0, 98.0)
+    toast_label.size = Vector2(600.0, 42.0)
     toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     toast_label.add_theme_font_size_override("font_size", 18)
@@ -226,8 +227,8 @@ func _add_mode_button(parent: HBoxContainer, text: String, mode: String) -> void
     var button := Button.new()
     button.text = text
     button.toggle_mode = true
-    button.custom_minimum_size = Vector2(84.0, 56.0)
-    button.add_theme_font_size_override("font_size", 13)
+    button.custom_minimum_size = Vector2(77.0, 56.0)
+    button.add_theme_font_size_override("font_size", 12)
     button.pressed.connect(_set_mode.bind(mode))
     parent.add_child(button)
     mode_buttons[mode] = button
@@ -249,6 +250,8 @@ func _set_mode(mode: String) -> void:
             help_label.text = "Tap a road to widen it from 1 to 2 to 3 lanes. Wider roads carry more traffic."
         "oneway":
             help_label.text = "Tap repeatedly to cycle valid one-way directions; the routing engine respects them."
+        "bridge":
+            help_label.text = "Tap a water cell on the Tagus to create a crossing. Each crossing consumes one bridge."
         "pan":
             help_label.text = "Drag the map to move around. Use +/− or the mouse wheel/pinch gesture to zoom."
         _:
@@ -266,16 +269,18 @@ func _on_hud_updated(snapshot: Dictionary) -> void:
     if status_label == null:
         return
 
-    status_label.text = "FLOW %d%%  W%d  ROAD %d  SIG %d  RBT %d  LANE %d  POP %d  CARS %d  SCORE %d" % [
+    var rush_text: String = " RUSH" if bool(snapshot.rush) else ""
+    status_label.text = "%s%s  FLOW %d%%  W%d  ROAD %d  SIG %d  RBT %d  BRG %d  LANE %d  POP %d" % [
+        String(snapshot.time),
+        rush_text,
         int(snapshot.flow),
         int(snapshot.week),
         int(snapshot.roads),
         int(snapshot.signals),
         int(snapshot.roundabouts),
+        int(snapshot.bridges),
         int(snapshot.lane_upgrades),
-        int(snapshot.population),
-        int(snapshot.vehicles),
-        int(snapshot.score)
+        int(snapshot.population)
     ]
     flow_bar.value = float(snapshot.flow)
     speed_button.text = "%dx" % int(snapshot.speed)
