@@ -24,4 +24,11 @@ jobs:
           use-dotnet: false
 
       - name: Import and parse project
-        run: godot --headless --path GridFlow --editor --quit
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path GridFlow --editor --quit 2>&1 | tee godot.log
+          if grep -E "SCRIPT ERROR|Parse Error|Compile Error|ERROR: Failed to load script" godot.log; then
+            echo "Godot reported script errors."
+            exit 1
+          fi
