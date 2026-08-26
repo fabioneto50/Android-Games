@@ -148,8 +148,8 @@ func can_vehicle_enter(from_world: Vector2, to_world: Vector2) -> bool:
     if delta == Vector2i.ZERO:
         return true
 
-    var vertical_move := abs(delta.y) >= abs(delta.x)
-    var vertical_green := _vertical_signal_green(target_cell)
+    var vertical_move: bool = abs(delta.y) >= abs(delta.x)
+    var vertical_green: bool = _vertical_signal_green(target_cell)
     return vertical_green if vertical_move else not vertical_green
 
 func vehicle_completed(vehicle: VehicleAgent) -> void:
@@ -476,9 +476,9 @@ func _draw() -> void:
         var point := cell_to_world(cell)
         draw_circle(point, 10.0, ROAD_COLOR)
         for direction in [Vector2i.RIGHT, Vector2i.DOWN]:
-            var neighbor := cell + direction
+            var neighbor: Vector2i = cell + direction
             if road_cells.has(neighbor):
-                var neighbor_point := cell_to_world(neighbor)
+                var neighbor_point: Vector2 = cell_to_world(neighbor)
                 draw_line(point, neighbor_point, ROAD_COLOR, 18.0, true)
                 draw_line(point, neighbor_point, ROAD_MARKING, 1.3, true)
 
