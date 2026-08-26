@@ -78,6 +78,7 @@ func _process(delta: float) -> void:
     var hard_limit: int = capacity + (4 if is_emergency else 2)
     if not allowed or density >= hard_limit:
         waiting = true
+        queue_redraw()
         return
 
     waiting = false
@@ -94,6 +95,9 @@ func _process(delta: float) -> void:
         if path_index >= path_points.size():
             _finish_trip()
 
+    if is_emergency:
+        queue_redraw()
+
 func _finish_trip() -> void:
     if completed:
         return
@@ -102,12 +106,50 @@ func _finish_trip() -> void:
         simulation.vehicle_completed(self)
 
 func _draw() -> void:
-    var body_size: Vector2 = Vector2(16.0, 9.0) if is_emergency else Vector2(14.0, 8.0)
-    draw_rect(Rect2(-body_size * 0.5, body_size), vehicle_color, true)
-    draw_rect(Rect2(Vector2(0.0, -3.0), Vector2(4.0, 6.0)), Color(0.88, 0.93, 0.95, 0.85), true)
+    var length: float = 17.0 if is_emergency else 15.0
+    var width: float = 9.5 if is_emergency else 8.2
+
+    # Soft shadow creates separation from the road surface.
+    draw_rect(Rect2(Vector2(-length * 0.5 + 1.6, -width * 0.5 + 2.0), Vector2(length, width)), Color(0.0, 0.0, 0.0, 0.22), true)
+
+    # Wheels.
+    var wheel_color := Color("#161D20")
+    draw_rect(Rect2(Vector2(-5.2, -width * 0.5 - 1.1), Vector2(4.0, 2.0)), wheel_color, true)
+    draw_rect(Rect2(Vector2(2.0, -width * 0.5 - 1.1), Vector2(4.0, 2.0)), wheel_color, true)
+    draw_rect(Rect2(Vector2(-5.2, width * 0.5 - 0.9), Vector2(4.0, 2.0)), wheel_color, true)
+    draw_rect(Rect2(Vector2(2.0, width * 0.5 - 0.9), Vector2(4.0, 2.0)), wheel_color, true)
+
+    # Main body and subtle highlight.
+    var body_rect := Rect2(Vector2(-length * 0.5, -width * 0.5), Vector2(length, width))
+    draw_rect(body_rect, vehicle_color, true)
+    draw_rect(Rect2(Vector2(-length * 0.5 + 1.0, -width * 0.5 + 0.8), Vector2(length - 2.0, 1.2)), vehicle_color.lightened(0.28), true)
+
+    # Cabin / glass.
+    var glass := Color(0.70, 0.86, 0.90, 0.92)
+    draw_colored_polygon(PackedVector2Array([
+        Vector2(-1.5, -width * 0.5 + 1.4),
+        Vector2(4.8, -width * 0.5 + 1.4),
+        Vector2(5.6, width * 0.5 - 1.4),
+        Vector2(-1.5, width * 0.5 - 1.4)
+    ]), glass)
+    draw_line(Vector2(1.0, -width * 0.5 + 1.4), Vector2(1.0, width * 0.5 - 1.4), Color(0.15, 0.25, 0.28, 0.35), 1.0, true)
+
+    # Head/tail lights make movement direction immediately legible.
+    draw_circle(Vector2(length * 0.5 - 0.7, -2.3), 1.0, Color("#FFF0B0"))
+    draw_circle(Vector2(length * 0.5 - 0.7, 2.3), 1.0, Color("#FFF0B0"))
+    draw_circle(Vector2(-length * 0.5 + 0.6, -2.2), 0.85, Color("#E45A58"))
+    draw_circle(Vector2(-length * 0.5 + 0.6, 2.2), 0.85, Color("#E45A58"))
+
+    if waiting and not is_emergency:
+        draw_circle(Vector2(-length * 0.5 - 2.0, 0.0), 1.6, Color("#F0C46B"))
 
     if is_emergency:
-        draw_rect(Rect2(Vector2(-3.0, -1.0), Vector2(6.0, 2.0)), Color.WHITE, true)
-        draw_rect(Rect2(Vector2(-1.0, -3.0), Vector2(2.0, 6.0)), Color.WHITE, true)
-        draw_circle(Vector2(-3.0, -5.2), 1.7, Color("#3C7DFF"))
-        draw_circle(Vector2(3.0, -5.2), 1.7, Color("#FF5D5D"))
+        # Ambulance identity and animated emergency lights.
+        draw_rect(Rect2(Vector2(-3.2, -1.0), Vector2(6.4, 2.0)), Color.WHITE, true)
+        draw_rect(Rect2(Vector2(-1.0, -3.2), Vector2(2.0, 6.4)), Color.WHITE, true)
+        var flash: bool = int(emergency_elapsed * 5.5) % 2 == 0
+        var left_light := Color("#4F8CFF") if flash else Color("#FF5F61")
+        var right_light := Color("#FF5F61") if flash else Color("#4F8CFF")
+        draw_circle(Vector2(-3.1, -width * 0.5 - 2.0), 1.8, left_light)
+        draw_circle(Vector2(3.1, -width * 0.5 - 2.0), 1.8, right_light)
+        draw_arc(Vector2.ZERO, 12.0, 0.0, TAU, 20, Color(0.38, 0.78, 0.64, 0.22), 2.0, true)
