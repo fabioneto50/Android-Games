@@ -3,6 +3,11 @@ class_name VehicleAgentPT
 
 const ROUNDABOUT_DRIVE_RADIUS := 21.5
 const ROUNDABOUT_MIN_STEPS := 8
+const NO_HOME := Vector2i(-999, -999)
+
+# Um veículo civil pertence sempre a uma casa e regressa a ela após servir o destino.
+var home_building_cell: Vector2i = NO_HOME
+var returning_home: bool = false
 
 func setup(
     points: Array[Vector2],
@@ -14,6 +19,23 @@ func setup(
 ) -> void:
     var expanded := _expand_roundabouts(points, p_simulation)
     super.setup(expanded, destination_cell, p_simulation, p_color, p_is_emergency, p_emergency_deadline)
+
+func setup_commute(
+    points: Array[Vector2],
+    destination_cell: Vector2i,
+    p_simulation: Node,
+    p_color: Color,
+    p_home_cell: Vector2i
+) -> void:
+    home_building_cell = p_home_cell
+    returning_home = false
+    setup(points, destination_cell, p_simulation, p_color, false, 0.0)
+
+func begin_return_trip(points: Array[Vector2]) -> void:
+    returning_home = true
+    destination_building_cell = home_building_cell
+    completed = false
+    replace_path(points)
 
 func replace_path(points: Array[Vector2]) -> void:
     var expanded := _expand_roundabouts(points, simulation)
@@ -51,16 +73,14 @@ func _expand_roundabouts(points: Array[Vector2], p_simulation: Node) -> Array[Ve
         var entry_angle: float = entry_direction.angle()
         var exit_angle: float = exit_direction.angle()
 
-        # Em Portugal circula-se pela direita e a trajetória visual da rotunda
-        # neste sistema de coordenadas segue no sentido anti-horário do ecrã.
+        # Em Portugal circula-se pela direita; visualmente seguimos a pista da rotunda
+        # sem atravessar o centro do cruzamento.
         while exit_angle >= entry_angle:
             exit_angle -= TAU
 
         var arc_size: float = absf(exit_angle - entry_angle)
         var steps: int = maxi(ROUNDABOUT_MIN_STEPS, int(ceil(arc_size / 0.22)))
 
-        # O carro entra tangente à rotunda e segue vários pontos do arco,
-        # deixando de atravessar o centro do cruzamento.
         for step: int in range(steps + 1):
             var t: float = float(step) / float(steps)
             var angle: float = lerpf(entry_angle, exit_angle, t)
