@@ -22,6 +22,7 @@ jobs:
         with:
           version: '4.4.1'
           use-dotnet: false
+          include-templates: true
 
       - name: Import and parse project
         shell: bash
@@ -42,3 +43,18 @@ jobs:
             echo "GRIDFLOW reported runtime errors."
             exit 1
           fi
+
+      - name: Export Web build
+        shell: bash
+        run: |
+          mkdir -p GridFlow/build/web
+          godot --headless --path GridFlow --export-release Web
+          test -f GridFlow/build/web/index.html
+
+      - name: Upload playable Web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: gridflow-web
+          path: GridFlow/build/web
+          if-no-files-found: error
+          retention-days: 14
