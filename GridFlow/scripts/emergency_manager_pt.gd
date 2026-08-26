@@ -1,36 +1,5 @@
-extends RefCounted
+extends EmergencyManager
 class_name EmergencyManagerPT
-
-const AMBULANCE_COLOR := Color("#D94B4B")
-
-var simulation: Node
-var active: Array[VehicleAgent] = []
-var completed_count: int = 0
-var failed_count: int = 0
-var green_charges: int = 1
-var green_cells: Dictionary = {}
-var green_timer: float = 0.0
-var _spawn_timer: float = 0.0
-
-func _init(p_simulation: Node) -> void:
-    simulation = p_simulation
-
-func tick(sim_delta: float) -> void:
-    _clean_active_list()
-
-    if green_timer > 0.0:
-        green_timer = maxf(0.0, green_timer - sim_delta)
-        if green_timer <= 0.0:
-            green_cells.clear()
-            simulation.queue_redraw()
-
-    if simulation.week < 2:
-        return
-
-    _spawn_timer += sim_delta
-    if _spawn_timer >= 24.0:
-        _spawn_timer = 0.0
-        _spawn_emergency()
 
 func activate_green_corridor() -> void:
     _clean_active_list()
@@ -61,9 +30,6 @@ func activate_green_corridor() -> void:
     simulation.toast_requested.emit("CORREDOR VERDE ATIVO — a ambulância tem prioridade nos semáforos")
     simulation.queue_redraw()
     simulation._emit_hud()
-
-func allows_signal_bypass(vehicle: VehicleAgent, target_cell: Vector2i) -> bool:
-    return vehicle.is_emergency and green_timer > 0.0 and green_cells.has(target_cell)
 
 func on_vehicle_completed(vehicle: VehicleAgent) -> void:
     if not vehicle.is_emergency:
@@ -129,9 +95,3 @@ func _spawn_emergency() -> void:
     simulation.pending_demand += 2
     simulation.toast_requested.emit("Emergência sem percurso disponível até ao hospital")
     simulation._emit_hud()
-
-func _clean_active_list() -> void:
-    for index: int in range(active.size() - 1, -1, -1):
-        var vehicle: VehicleAgent = active[index]
-        if not is_instance_valid(vehicle) or vehicle.completed:
-            active.remove_at(index)
