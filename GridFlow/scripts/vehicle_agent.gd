@@ -41,7 +41,7 @@ func _process(delta: float) -> void:
         _finish_trip()
         return
 
-    var target := path_points[path_index]
+    var target: Vector2 = path_points[path_index]
     var target_cell: Vector2i = simulation.world_to_cell(target)
 
     if not simulation.is_road_cell(target_cell):
@@ -50,18 +50,18 @@ func _process(delta: float) -> void:
 
     var allowed: bool = simulation.can_vehicle_enter(position, target)
     var density: int = simulation.get_occupancy(target_cell)
-    var speed_factor := clamp(1.0 - max(0, density - 1) * 0.17, 0.22, 1.0)
+    var speed_factor: float = clampf(1.0 - float(maxi(0, density - 1)) * 0.17, 0.22, 1.0)
 
     if not allowed or density >= 6:
         waiting = true
         return
 
     waiting = false
-    var direction := (target - position).normalized()
+    var direction: Vector2 = (target - position).normalized()
     if direction.length_squared() > 0.0:
         rotation = direction.angle()
 
-    var travel := base_speed * speed_factor * delta * simulation.time_scale
+    var travel: float = base_speed * speed_factor * delta * float(simulation.time_scale)
     position = position.move_toward(target, travel)
 
     if position.distance_to(target) <= 1.0:
