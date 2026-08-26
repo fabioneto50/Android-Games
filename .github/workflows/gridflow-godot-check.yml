@@ -32,3 +32,13 @@ jobs:
             echo "Godot reported script errors."
             exit 1
           fi
+
+      - name: Runtime smoke test
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path GridFlow --quit-after 240 2>&1 | tee runtime.log
+          if grep -E "SCRIPT ERROR|Parse Error|Compile Error|Invalid call|Invalid access|ERROR: Failed to load script" runtime.log; then
+            echo "GRIDFLOW reported runtime errors."
+            exit 1
+          fi
