@@ -16,7 +16,6 @@ const FLOW_BAD := Color("#E36C65")
 func _init(p_simulation: CitySimulation) -> void:
     simulation = p_simulation
     z_index = 5
-    mouse_filter = Control.MOUSE_FILTER_IGNORE if self is Control else 0
 
 func _process(_delta: float) -> void:
     queue_redraw()
@@ -54,7 +53,6 @@ func _draw_roads() -> void:
             var bridge_segment: bool = simulation.bridge_cells.has(cell) or simulation.bridge_cells.has(neighbor)
             var surface: Color = Color("#736D61") if bridge_segment else ROAD_SURFACE
 
-            # Sidewalk/edge, shadow and clean asphalt surface.
             draw_line(point + Vector2(1.4, 2.3), neighbor_point + Vector2(1.4, 2.3), SHADOW, road_width + 8.0, true)
             draw_line(point, neighbor_point, SIDEWALK if not bridge_segment else Color("#B6A889"), road_width + 6.0, true)
             draw_line(point, neighbor_point, ROAD_EDGE, road_width + 2.5, true)
@@ -63,7 +61,6 @@ func _draw_roads() -> void:
             _draw_lane_marks(point, neighbor_point, lanes, road_width)
             _draw_load_indicator(cell, neighbor, point, neighbor_point, road_width)
 
-    # Refine junction nodes after segments so they appear continuous.
     for raw_cell: Variant in simulation.road_cells.keys():
         var cell: Vector2i = raw_cell as Vector2i
         var center: Vector2 = simulation.cell_to_world(cell)
@@ -79,14 +76,14 @@ func _draw_lane_marks(from: Vector2, to: Vector2, lanes: int, road_width: float)
         return
     var normal := Vector2(-direction.y, direction.x)
 
-    # Central dashed marking.
     _draw_dashed_segment(from, to, LANE_MARK, 1.25, 7.0, 6.0)
 
-    # Extra lane separators appear on widened roads.
     if lanes >= 2:
         var offset: float = road_width * 0.25
-        _draw_dashed_segment(from + normal * offset, to + normal * offset, Color(LANE_MARK, 0.38), 0.9, 5.0, 7.0)
-        _draw_dashed_segment(from - normal * offset, to - normal * offset, Color(LANE_MARK, 0.38), 0.9, 5.0, 7.0)
+        var secondary_mark := LANE_MARK
+        secondary_mark.a = 0.38
+        _draw_dashed_segment(from + normal * offset, to + normal * offset, secondary_mark, 0.9, 5.0, 7.0)
+        _draw_dashed_segment(from - normal * offset, to - normal * offset, secondary_mark, 0.9, 5.0, 7.0)
 
 func _draw_dashed_segment(from: Vector2, to: Vector2, color: Color, width: float, dash: float, gap: float) -> void:
     var distance: float = from.distance_to(to)
@@ -111,11 +108,12 @@ func _draw_load_indicator(cell: Vector2i, neighbor: Vector2i, from: Vector2, to:
         color = FLOW_BAD
     elif load >= 0.65:
         color = FLOW_WARN
+    color.a = 0.82
 
     var direction: Vector2 = (to - from).normalized()
     var normal := Vector2(-direction.y, direction.x)
     var offset: float = road_width * 0.5 - 2.3
-    draw_line(from + normal * offset, to + normal * offset, Color(color, 0.82), 2.5, true)
+    draw_line(from + normal * offset, to + normal * offset, color, 2.5, true)
 
 func _draw_buildings() -> void:
     for building: CityBuilding in simulation.buildings:
@@ -140,7 +138,7 @@ func _draw_buildings() -> void:
             draw_circle(center + Vector2(15.0, -11.6), 0.9, Color.WHITE)
 
 func _draw_building_shadow(center: Vector2) -> void:
-    draw_rect(Rect2(center + Vector2(-14.0, -11.0) + Vector2(3.0, 5.0), Vector2(28.0, 27.0)), Color(0.05, 0.08, 0.09, 0.20), true)
+    draw_rect(Rect2(center + Vector2(-11.0, -6.0), Vector2(28.0, 27.0)), Color(0.05, 0.08, 0.09, 0.20), true)
 
 func _draw_house(center: Vector2, color: Color) -> void:
     var body := Rect2(center + Vector2(-12.0, -7.0), Vector2(24.0, 20.0))
