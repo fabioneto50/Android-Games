@@ -1,12 +1,24 @@
 extends CitySimulation
 class_name CitySimulationPT
 
+# Cada casa residencial possui uma pequena frota própria.
+# Os destinos acumulam pedidos até um carro chegar efetivamente ao edifício.
+var home_active_vehicles: Dictionary = {}
+var destination_inbound: Dictionary = {}
+
 func _ready() -> void:
     rng.randomize()
     emergency_manager = EmergencyManagerPT.new(self)
     _create_starter_city()
+    _recompute_pending_demand()
     queue_redraw()
     _emit_hud()
+
+func get_snapshot() -> Dictionary:
+    var snapshot: Dictionary = super.get_snapshot()
+    snapshot["requests"] = get_total_destination_demand()
+    snapshot["home_cars_available"] = get_total_available_home_cars()
+    return snapshot
 
 func get_cell_capacity(cell: Vector2i) -> int:
     var capacity: int = get_lane_count(cell) * 3
@@ -70,6 +82,80 @@ func reroute_vehicle(vehicle: VehicleAgent) -> void:
             points.append(point)
     points.append(cell_to_world(vehicle.destination_building_cell))
     vehicle.replace_path(points)
+
+func vehicle_completed(vehicle: VehicleAgent) -> void:
+    var commuter := vehicle as VehicleAgentPT
+    if commuter != null and not commuter.is_emergency and commuter.home_building_cell != VehicleAgentPT.NO_HOME:
+        if commuter.returning_home:
+            _vehicle_returned_home(commuter)
+        else:
+            _vehicle_reached_destination(commuter)
+        return
+
+    super.vehicle_completed(vehicle)
+
+func _vehicle_reached_destination(vehicle: VehicleAgentPT) -> void:
+    var destination := _building_at_cell(vehicle.destination_building_cell)
+    _decrement_inbound(vehicle.destination_building_cell)
+
+    if destination != null and destination.is_destination():
+        destination.demand = maxi(0, destination.demand - 1)
+        completed_trips += 1
+
+    _recompute_pending_demand()
+
+    var home := _building_at_cell(vehicle.home_building_cell)
+    if home == null:
+        _release_home_slot(vehicle.home_building_cell)
+        vehicles.erase(vehicle)
+        vehicle.queue_free()
+        return
+
+    var start_access: Vector2i = _access_road_cell(vehicle.destination_building_cell)
+    var home_access: Vector2i = _access_road_cell(home.cell)
+    if start_access == INVALID_CELL or home_access == INVALID_CELL:
+        _release_home_slot(home.cell)
+        vehicles.erase(vehicle)
+        vehicle.queue_free()
+        return
+
+    var path_cells: Array[Vector2i] = graph.get_path_cells(start_access, home_access)
+    if path_cells.is_empty():
+        _release_home_slot(home.cell)
+        vehicles.erase(vehicle)
+        vehicle.queue_free()
+        return
+
+    var points: Array[Vector2] = [vehicle.position]
+    for cell: Vector2i in path_cells:
+        var point := cell_to_world(cell)
+        if points[-1].distance_to(point) > 1.0:
+            points.append(point)
+    points.append(cell_to_world(home.cell))
+
+    vehicle.begin_return_trip(points)
+    _emit_hud()
+
+func _vehicle_returned_home(vehicle: VehicleAgentPT) -> void:
+    _release_home_slot(vehicle.home_building_cell)
+    vehicles.erase(vehicle)
+    vehicle.queue_free()
+    _emit_hud()
+
+func _fail_trip(vehicle: VehicleAgent) -> void:
+    var commuter := vehicle as VehicleAgentPT
+    if commuter != null and not commuter.is_emergency and commuter.home_building_cell != VehicleAgentPT.NO_HOME:
+        if not commuter.returning_home:
+            _decrement_inbound(commuter.destination_building_cell)
+        _release_home_slot(commuter.home_building_cell)
+        vehicles.erase(commuter)
+        commuter.completed = true
+        commuter.queue_free()
+        _recompute_pending_demand()
+        _emit_hud()
+        return
+
+    super._fail_trip(vehicle)
 
 func apply_upgrade(upgrade_id: String) -> void:
     if not awaiting_upgrade:
@@ -275,44 +361,190 @@ func _building_name_pt(building_type: String) -> String:
         _:
             return "nova zona residencial"
 
+# Cada pulso de procura cria um pedido num destino. Só depois tentamos despachar
+# um dos carros que esteja efetivamente estacionado numa casa ligada à rede.
 func _generate_trip() -> void:
-    if buildings.size() < 2:
-        return
-    if vehicles.size() >= 140:
-        pending_demand += 1
+    var destination := _select_destination_for_new_request()
+    if destination == null:
         return
 
-    var origin: CityBuilding = buildings[rng.randi_range(0, buildings.size() - 1)]
-    var candidates: Array[CityBuilding] = []
+    var request_amount: int = 1
+    if week >= 5 and rng.randf() < 0.24:
+        request_amount += 1
+    if week >= 10 and rng.randf() < 0.18:
+        request_amount += 1
+
+    destination.demand += request_amount
+    _recompute_pending_demand()
+
+    var dispatch_attempts: int = 2 if _is_rush_hour() else 1
+    for _attempt: int in range(dispatch_attempts):
+        if not _dispatch_best_available_trip():
+            break
+
+func _select_destination_for_new_request() -> CityBuilding:
+    var total_weight: float = 0.0
     for building: CityBuilding in buildings:
-        if building == origin:
+        if building.is_destination():
+            total_weight += _destination_demand_weight(building)
+
+    if total_weight <= 0.0:
+        return null
+
+    var roll: float = rng.randf_range(0.0, total_weight)
+    var cursor: float = 0.0
+    for building: CityBuilding in buildings:
+        if not building.is_destination():
             continue
-        if building.building_type != origin.building_type:
-            candidates.append(building)
+        cursor += _destination_demand_weight(building)
+        if roll <= cursor:
+            return building
 
-    if candidates.is_empty():
-        return
+    return null
 
-    var destination: CityBuilding = candidates[rng.randi_range(0, candidates.size() - 1)]
-    var start_access: Vector2i = _access_road_cell(origin.cell)
-    var end_access: Vector2i = _access_road_cell(destination.cell)
+func _destination_demand_weight(building: CityBuilding) -> float:
+    var hour: int = int(city_minutes / 60.0)
+    match building.building_type:
+        "office":
+            if hour >= 7 and hour < 11:
+                return 5.0
+            if hour >= 14 and hour < 18:
+                return 3.0
+            return 1.4
+        "shop":
+            if hour >= 11 and hour < 21:
+                return 4.0
+            return 1.2
+        "hospital":
+            return 1.8
+        _:
+            return 1.0
 
-    if start_access == INVALID_CELL or end_access == INVALID_CELL:
-        pending_demand += 1
-        return
+func _dispatch_best_available_trip() -> bool:
+    var attempted: Dictionary = {}
+    var destination_count: int = 0
+    for building: CityBuilding in buildings:
+        if building.is_destination() and _outstanding_requests(building) > 0:
+            destination_count += 1
 
-    var path_cells: Array[Vector2i] = graph.get_path_cells(start_access, end_access)
-    if path_cells.is_empty():
-        pending_demand += 1
-        return
+    for _index: int in range(destination_count):
+        var destination := _highest_unattempted_destination(attempted)
+        if destination == null:
+            return false
+        attempted[destination.cell] = true
+        if _dispatch_vehicle_to(destination):
+            return true
 
-    var points: Array[Vector2] = [cell_to_world(origin.cell)]
-    for cell: Vector2i in path_cells:
+    return false
+
+func _highest_unattempted_destination(attempted: Dictionary) -> CityBuilding:
+    var best: CityBuilding = null
+    var best_score: float = -INF
+
+    for building: CityBuilding in buildings:
+        if not building.is_destination() or attempted.has(building.cell):
+            continue
+        var outstanding: int = _outstanding_requests(building)
+        if outstanding <= 0:
+            continue
+        var score: float = float(outstanding) * 10.0 + building.pressure() * 4.0
+        if score > best_score:
+            best_score = score
+            best = building
+
+    return best
+
+func _dispatch_vehicle_to(destination: CityBuilding) -> bool:
+    if vehicles.size() >= 140:
+        return false
+
+    var destination_access: Vector2i = _access_road_cell(destination.cell)
+    if destination_access == INVALID_CELL:
+        return false
+
+    var selected_home: CityBuilding = null
+    var selected_path: Array[Vector2i] = []
+    var selected_length: int = 999999
+
+    for home: CityBuilding in buildings:
+        if not home.is_home():
+            continue
+        if get_home_available_cars(home) <= 0:
+            continue
+
+        var home_access: Vector2i = _access_road_cell(home.cell)
+        if home_access == INVALID_CELL:
+            continue
+
+        var path_cells: Array[Vector2i] = graph.get_path_cells(home_access, destination_access)
+        if path_cells.is_empty():
+            continue
+
+        if path_cells.size() < selected_length:
+            selected_length = path_cells.size()
+            selected_home = home
+            selected_path = path_cells
+
+    if selected_home == null or selected_path.is_empty():
+        return false
+
+    var points: Array[Vector2] = [cell_to_world(selected_home.cell)]
+    for cell: Vector2i in selected_path:
         points.append(cell_to_world(cell))
     points.append(cell_to_world(destination.cell))
 
     var vehicle := VehicleAgentPT.new()
-    vehicle.setup(points, destination.cell, self, origin.color.darkened(0.28))
+    var car_color: Color = selected_home.color.darkened(0.30)
+    vehicle.setup_commute(points, destination.cell, self, car_color, selected_home.cell)
     add_child(vehicle)
     vehicles.append(vehicle)
-    pending_demand = maxi(0, pending_demand - 1)
+
+    home_active_vehicles[selected_home.cell] = int(home_active_vehicles.get(selected_home.cell, 0)) + 1
+    destination_inbound[destination.cell] = int(destination_inbound.get(destination.cell, 0)) + 1
+    return true
+
+func _outstanding_requests(destination: CityBuilding) -> int:
+    return maxi(0, destination.demand - int(destination_inbound.get(destination.cell, 0)))
+
+func _decrement_inbound(cell: Vector2i) -> void:
+    var current: int = int(destination_inbound.get(cell, 0))
+    if current <= 1:
+        destination_inbound.erase(cell)
+    else:
+        destination_inbound[cell] = current - 1
+
+func _release_home_slot(cell: Vector2i) -> void:
+    var current: int = int(home_active_vehicles.get(cell, 0))
+    if current <= 1:
+        home_active_vehicles.erase(cell)
+    else:
+        home_active_vehicles[cell] = current - 1
+
+func get_home_available_cars(home: CityBuilding) -> int:
+    if home == null or not home.is_home():
+        return 0
+    var active: int = int(home_active_vehicles.get(home.cell, 0))
+    return maxi(0, home.home_vehicle_capacity - active)
+
+func get_total_available_home_cars() -> int:
+    var total: int = 0
+    for building: CityBuilding in buildings:
+        if building.is_home():
+            total += get_home_available_cars(building)
+    return total
+
+func get_total_destination_demand() -> int:
+    var total: int = 0
+    for building: CityBuilding in buildings:
+        if building.is_destination():
+            total += building.demand
+    return total
+
+func _recompute_pending_demand() -> void:
+    pending_demand = get_total_destination_demand()
+
+func _building_at_cell(cell: Vector2i) -> CityBuilding:
+    for building: CityBuilding in buildings:
+        if building.cell == cell:
+            return building
+    return null
