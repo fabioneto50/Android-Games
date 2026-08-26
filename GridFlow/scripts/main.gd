@@ -1,6 +1,7 @@
 extends Node
 
 var simulation: CitySimulation
+var city_overlay: CityVisualOverlay
 var status_label: Label
 var resource_label: Label
 var help_label: Label
@@ -19,6 +20,8 @@ var _toast_tween: Tween
 func _ready() -> void:
     simulation = CitySimulation.new()
     add_child(simulation)
+    city_overlay = CityVisualOverlay.new(simulation)
+    simulation.add_child(city_overlay)
     _build_interface()
 
     simulation.hud_updated.connect(_on_hud_updated)
