@@ -13,6 +13,7 @@ const MIN_CELL := Vector2i(0, 2)
 const MAX_CELL := Vector2i(26, 14)
 const INVALID_CELL := Vector2i(-999, -999)
 const DIRECTIONS: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+const RIVER_ROW := 11
 
 const BACKGROUND := Color("#F4F0E6")
 const GRID_DOT := Color("#DED9CE")
@@ -24,12 +25,15 @@ const SHOP_COLOR := Color("#E9C46A")
 const HOSPITAL_COLOR := Color("#D85D5D")
 const ONEWAY_COLOR := Color("#F4C95D")
 const ROUNDABOUT_COLOR := Color("#82A7A6")
+const WATER_COLOR := Color("#86B8C9")
+const BRIDGE_COLOR := Color("#B7A47D")
 
 var graph := RoadGraph.new()
 var road_cells: Dictionary = {}
 var road_lanes: Dictionary = {}
 var traffic_lights: Dictionary = {}
 var roundabouts: Dictionary = {}
+var bridge_cells: Dictionary = {}
 var buildings: Array[CityBuilding] = []
 var vehicles: Array[VehicleAgent] = []
 var occupancy: Dictionary = {}
@@ -45,12 +49,14 @@ var road_budget: int = 120
 var signal_budget: int = 2
 var roundabout_budget: int = 1
 var lane_upgrade_budget: int = 2
+var bridge_budget: int = 1
 var week: int = 1
 var completed_trips: int = 0
 var pending_demand: int = 0
 var flow_score: float = 100.0
 var critical_time: float = 0.0
 var sim_time: float = 0.0
+var city_minutes: float = 420.0
 
 var view_zoom: float = 1.0
 var _dragging: bool = false
@@ -73,6 +79,7 @@ func _process(delta: float) -> void:
 
     var sim_delta: float = delta * time_scale
     sim_time += sim_delta
+    city_minutes = fmod(city_minutes + sim_delta * 3.0, 1440.0)
     _growth_timer += sim_delta
     _demand_timer += sim_delta
     _week_timer += sim_delta
@@ -84,7 +91,7 @@ func _process(delta: float) -> void:
         _growth_timer = 0.0
         _spawn_building()
 
-    if _demand_timer >= 1.7:
+    if _demand_timer >= _current_demand_interval():
         _demand_timer = 0.0
         _generate_trip()
 
@@ -143,10 +150,13 @@ func get_snapshot() -> Dictionary:
     return {
         "flow": int(round(flow_score)),
         "week": week,
+        "time": _format_city_time(),
+        "rush": _is_rush_hour(),
         "roads": road_budget,
         "signals": signal_budget,
         "roundabouts": roundabout_budget,
         "lane_upgrades": lane_upgrade_budget,
+        "bridges": bridge_budget,
         "trips": completed_trips,
         "pending": pending_demand,
         "vehicles": vehicles.size(),
@@ -248,6 +258,9 @@ func apply_upgrade(upgrade_id: String) -> void:
         "lanes":
             lane_upgrade_budget += 2
             toast_requested.emit("Upgrade: +2 lane upgrades")
+        "bridge":
+            bridge_budget += 1
+            toast_requested.emit("Upgrade: +1 bridge")
         _:
             road_budget += 20
             toast_requested.emit("Upgrade: +20 road segments")
@@ -269,10 +282,29 @@ func _build_upgrade_options() -> Array[Dictionary]:
         {"id": "roads", "title": "ROAD SUPPLY", "detail": "+30 road segments"},
         {"id": "signals", "title": "SMART SIGNALS", "detail": "+2 traffic signals"},
         {"id": "roundabout", "title": "ROUNDABOUT", "detail": "+1 roundabout"},
-        {"id": "lanes", "title": "ROAD WIDENING", "detail": "+2 lane upgrades"}
+        {"id": "lanes", "title": "ROAD WIDENING", "detail": "+2 lane upgrades"},
+        {"id": "bridge", "title": "RIVER CROSSING", "detail": "+1 bridge over the Tagus"}
     ]
     pool.shuffle()
     return [pool[0], pool[1]]
+
+func _current_demand_interval() -> float:
+    var hour: int = int(city_minutes / 60.0)
+    if (hour >= 7 and hour < 10) or (hour >= 16 and hour < 20):
+        return 0.95
+    if hour >= 22 or hour < 6:
+        return 2.5
+    return 1.65
+
+func _is_rush_hour() -> bool:
+    var hour: int = int(city_minutes / 60.0)
+    return (hour >= 7 and hour < 10) or (hour >= 16 and hour < 20)
+
+func _format_city_time() -> String:
+    var total_minutes: int = int(city_minutes) % 1440
+    var hours: int = total_minutes / 60
+    var minutes: int = total_minutes % 60
+    return "%02d:%02d" % [hours, minutes]
 
 func _fail_trip(vehicle: VehicleAgent) -> void:
     pending_demand += 1
@@ -349,6 +381,9 @@ func _begin_interaction(world_position: Vector2) -> void:
         "oneway":
             _cycle_one_way(cell)
             return
+        "bridge":
+            _place_bridge(cell)
+            return
 
     _dragging = true
     _last_drag_cell = cell
@@ -384,11 +419,20 @@ func _apply_cell_action(cell: Vector2i) -> void:
     elif interaction_mode == "erase":
         _remove_road_cell(cell)
 
-func _add_road_cell(cell: Vector2i, free: bool = false) -> void:
+func _add_road_cell(cell: Vector2i, free: bool = false, as_bridge: bool = false) -> void:
     if not _valid_cell(cell) or road_cells.has(cell) or _is_building_cell(cell):
+        return
+    if _is_water_cell(cell) and not as_bridge:
+        toast_requested.emit("The Tagus requires a bridge")
+        return
+    if as_bridge and not _is_water_cell(cell):
+        toast_requested.emit("Bridge segments can only cross the Tagus")
         return
     if not free and road_budget <= 0:
         toast_requested.emit("No road segments available")
+        return
+    if as_bridge and bridge_budget <= 0:
+        toast_requested.emit("No bridges available")
         return
 
     road_cells[cell] = true
@@ -396,19 +440,36 @@ func _add_road_cell(cell: Vector2i, free: bool = false) -> void:
     graph.add_cell(cell)
     if not free:
         road_budget -= 1
+    if as_bridge:
+        bridge_cells[cell] = true
+        bridge_budget -= 1
     queue_redraw()
+    _emit_hud()
+
+func _place_bridge(cell: Vector2i) -> void:
+    if bridge_cells.has(cell):
+        _remove_road_cell(cell)
+        toast_requested.emit("Bridge removed and refunded")
+        return
+    _add_road_cell(cell, false, true)
+    if bridge_cells.has(cell):
+        toast_requested.emit("Bridge crossing created")
 
 func _remove_road_cell(cell: Vector2i) -> void:
     if not road_cells.has(cell):
         return
 
     var lanes: int = get_lane_count(cell)
+    var was_bridge: bool = bridge_cells.has(cell)
     road_cells.erase(cell)
     road_lanes.erase(cell)
     graph.remove_cell(cell)
     road_budget += 1
     lane_upgrade_budget += maxi(0, lanes - 1)
 
+    if was_bridge:
+        bridge_cells.erase(cell)
+        bridge_budget += 1
     if traffic_lights.has(cell):
         traffic_lights.erase(cell)
         signal_budget += 1
@@ -417,6 +478,7 @@ func _remove_road_cell(cell: Vector2i) -> void:
         roundabout_budget += 1
 
     queue_redraw()
+    _emit_hud()
 
 func _toggle_signal(cell: Vector2i) -> void:
     if not road_cells.has(cell) or graph.degree(cell) < 3:
@@ -530,7 +592,7 @@ func _spawn_building() -> void:
             rng.randi_range(MIN_CELL.x + 1, MAX_CELL.x - 1),
             rng.randi_range(MIN_CELL.y + 1, MAX_CELL.y - 1)
         )
-        if road_cells.has(cell) or _is_building_cell(cell):
+        if _is_water_cell(cell) or road_cells.has(cell) or _is_building_cell(cell):
             continue
         if _has_building_within(cell, 1):
             continue
@@ -678,6 +740,9 @@ func _estimate_population() -> int:
 func _valid_cell(cell: Vector2i) -> bool:
     return cell.x >= MIN_CELL.x and cell.x <= MAX_CELL.x and cell.y >= MIN_CELL.y and cell.y <= MAX_CELL.y
 
+func _is_water_cell(cell: Vector2i) -> bool:
+    return cell.y == RIVER_ROW
+
 func _is_building_cell(cell: Vector2i) -> bool:
     for building: CityBuilding in buildings:
         if building.cell == cell:
@@ -696,8 +761,14 @@ func _emit_hud() -> void:
 func _draw() -> void:
     draw_rect(Rect2(Vector2.ZERO, WORLD_SIZE), BACKGROUND, true)
 
+    var river_y: float = cell_to_world(Vector2i(0, RIVER_ROW)).y
+    draw_rect(Rect2(Vector2(0.0, river_y - GRID_SIZE * 0.46), Vector2(WORLD_SIZE.x, GRID_SIZE * 0.92)), WATER_COLOR, true)
+    draw_line(Vector2(0.0, river_y - GRID_SIZE * 0.34), Vector2(WORLD_SIZE.x, river_y - GRID_SIZE * 0.34), WATER_COLOR.lightened(0.12), 2.0, true)
+
     for x: int in range(MIN_CELL.x, MAX_CELL.x + 1):
         for y: int in range(MIN_CELL.y, MAX_CELL.y + 1):
+            if y == RIVER_ROW:
+                continue
             draw_circle(cell_to_world(Vector2i(x, y)), 1.4, GRID_DOT)
 
     for raw_cell: Variant in road_cells.keys():
@@ -718,8 +789,15 @@ func _draw() -> void:
             if neighbor_lanes > lanes:
                 lanes = neighbor_lanes
             var road_width: float = 18.0 + float(lanes - 1) * 7.0
-            draw_line(point, neighbor_point, ROAD_COLOR, road_width, true)
+            var segment_color: Color = BRIDGE_COLOR if bridge_cells.has(cell) or bridge_cells.has(neighbor) else ROAD_COLOR
+            draw_line(point, neighbor_point, segment_color, road_width, true)
             draw_line(point, neighbor_point, ROAD_MARKING, 1.3, true)
+
+    for raw_cell: Variant in bridge_cells.keys():
+        var cell: Vector2i = raw_cell as Vector2i
+        var center: Vector2 = cell_to_world(cell)
+        draw_line(center + Vector2(-13.0, -16.0), center + Vector2(-13.0, 16.0), Color("#ECE6D4"), 2.0, true)
+        draw_line(center + Vector2(13.0, -16.0), center + Vector2(13.0, 16.0), Color("#ECE6D4"), 2.0, true)
 
     for raw_cell: Variant in roundabouts.keys():
         var cell: Vector2i = raw_cell as Vector2i
@@ -740,8 +818,8 @@ func _draw() -> void:
         if one_way == Vector2i.ZERO:
             continue
         var center: Vector2 = cell_to_world(cell)
-        var direction_vector := Vector2(float(one_way.x), float(one_way.y))
-        var normal := Vector2(-direction_vector.y, direction_vector.x)
+        var direction_vector: Vector2 = Vector2(float(one_way.x), float(one_way.y))
+        var normal: Vector2 = Vector2(-direction_vector.y, direction_vector.x)
         var tip: Vector2 = center + direction_vector * 10.0
         var tail: Vector2 = center - direction_vector * 6.0
         draw_line(tail, tip, ONEWAY_COLOR, 2.5, true)
@@ -751,7 +829,7 @@ func _draw() -> void:
     for building: CityBuilding in buildings:
         var center: Vector2 = cell_to_world(building.cell)
         var connected: bool = _access_road_cell(building.cell) != INVALID_CELL
-        var building_size := Vector2(27.0, 27.0)
+        var building_size: Vector2 = Vector2(27.0, 27.0)
         draw_rect(Rect2(center - building_size * 0.5, building_size), building.color, true)
         draw_rect(Rect2(center - Vector2(10.0, 9.0), Vector2(20.0, 4.0)), building.color.lightened(0.22), true)
 
