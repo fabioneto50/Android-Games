@@ -10,6 +10,11 @@ const ROTUNDA_RAIO_EXTERIOR := 31.0
 const ROTUNDA_RAIO_PISTA := 27.5
 const ROTUNDA_RAIO_ILHA := 14.0
 const ROTUNDA_RAIO_TRAJETO := 21.5
+const PEDIDO_NORMAL := Color("#F2F4EF")
+const PEDIDO_ALERTA := Color("#F0C46B")
+const PEDIDO_CRITICO := Color("#E56C68")
+const CARRO_EM_CASA := Color("#DCE7E3")
+const CARRO_EM_VIAGEM := Color("#53666A")
 
 func _build_intro() -> void:
     _intro_layer = CanvasLayer.new()
@@ -65,7 +70,7 @@ func _build_intro() -> void:
     column.add_child(divider)
 
     var description := Label.new()
-    description.text = "Constrói uma rede viária resistente enquanto Lisboa cresce à tua volta.\nControla cruzamentos, cria rotundas, alarga estradas, atravessa o Tejo e abre caminho às emergências antes de o trânsito colapsar."
+    description.text = "Constrói uma rede viária resistente enquanto Lisboa cresce à tua volta.\nAs casas têm carros próprios e os destinos acumulam procura: mantém as viagens a fluir antes de a cidade entrar em colapso."
     description.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     description.add_theme_font_size_override("font_size", 14)
@@ -74,7 +79,7 @@ func _build_intro() -> void:
     column.add_child(description)
 
     var features := Label.new()
-    features.text = "TRÁFEGO DINÂMICO   •   HORA DE PONTA   •   EMERGÊNCIAS   •   CRESCIMENTO"
+    features.text = "CASA → DESTINO → CASA   •   HORA DE PONTA   •   EMERGÊNCIAS   •   CRESCIMENTO"
     features.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     features.add_theme_font_size_override("font_size", 10)
     features.add_theme_color_override("font_color", Color("#78908F"))
@@ -89,7 +94,7 @@ func _build_intro() -> void:
     column.add_child(play)
 
     var hint := Label.new()
-    hint.text = "Dica: as rotundas grandes mantêm o fluxo sem semáforos, mas é preciso deixar espaço à volta."
+    hint.text = "Dica: liga várias casas à rede para aumentar a capacidade de resposta aos destinos."
     hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     hint.add_theme_font_size_override("font_size", 10)
     hint.add_theme_color_override("font_color", Color("#718483"))
@@ -98,6 +103,7 @@ func _build_intro() -> void:
 func _draw_buildings() -> void:
     _draw_building_connections()
     super._draw_buildings()
+    _draw_mobility_markers()
 
 func _draw_building_connections() -> void:
     for building: CityBuilding in simulation.buildings:
@@ -123,18 +129,85 @@ func _draw_building_connections() -> void:
             var normal := Vector2(-direction.y, direction.x)
             draw_line(start - normal * 3.0, start + normal * 3.0, Color("#E9E5DA"), 1.2, true)
 
+func _draw_mobility_markers() -> void:
+    var sim_pt := simulation as CitySimulationPT
+    if sim_pt == null:
+        return
+
+    for building: CityBuilding in simulation.buildings:
+        var center: Vector2 = simulation.cell_to_world(building.cell)
+        if building.is_home():
+            _draw_home_garage(center, building, sim_pt)
+        else:
+            _draw_destination_requests(center, building)
+
+func _draw_home_garage(center: Vector2, home: CityBuilding, sim_pt: CitySimulationPT) -> void:
+    var available: int = sim_pt.get_home_available_cars(home)
+    var active: int = home.home_vehicle_capacity - available
+    var base := center + Vector2(-9.5, 14.0)
+
+    draw_rect(Rect2(base + Vector2(-2.0, -2.0), Vector2(23.0, 8.0)), Color(0.10, 0.15, 0.16, 0.18), true)
+    for index: int in range(home.home_vehicle_capacity):
+        var slot := base + Vector2(float(index) * 11.0, 0.0)
+        var car_present: bool = index >= active
+        var car_color: Color = CARRO_EM_CASA if car_present else CARRO_EM_VIAGEM
+        draw_rect(Rect2(slot, Vector2(8.0, 4.0)), Color("#28383B"), true)
+        draw_rect(Rect2(slot + Vector2(1.0, 0.7), Vector2(6.0, 2.6)), car_color, true)
+        if not car_present:
+            draw_line(slot + Vector2(1.0, 2.0), slot + Vector2(7.0, 2.0), Color(0.64, 0.75, 0.73, 0.28), 1.0, true)
+
+func _draw_destination_requests(center: Vector2, destination: CityBuilding) -> void:
+    var demand: int = destination.demand
+    if demand <= 0:
+        return
+
+    var pressure: float = destination.pressure()
+    var marker_color: Color = PEDIDO_NORMAL
+    if pressure >= 1.0:
+        marker_color = PEDIDO_CRITICO
+    elif pressure >= 0.65:
+        marker_color = PEDIDO_ALERTA
+
+    var visible_count: int = mini(demand, 6)
+    var total_width: float = float(visible_count - 1) * 7.0
+    var start_x: float = center.x - total_width * 0.5
+    var y: float = center.y - 27.0
+
+    for index: int in range(visible_count):
+        var p := Vector2(start_x + float(index) * 7.0, y)
+        _draw_request_diamond(p, marker_color)
+
+    if demand > 6:
+        draw_circle(Vector2(center.x + total_width * 0.5 + 8.0, y), 3.8, marker_color)
+        draw_circle(Vector2(center.x + total_width * 0.5 + 8.0, y), 1.5, Color("#243236"))
+
+    if pressure >= 0.65:
+        var pulse: float = 1.0 + sin(simulation.sim_time * 4.0) * 0.08
+        var ring_color := Color(marker_color, 0.30 if pressure < 1.0 else 0.48)
+        draw_arc(center, 22.0 * pulse, 0.0, TAU, 30, ring_color, 2.2 if pressure < 1.0 else 3.0, true)
+
+func _draw_request_diamond(center: Vector2, color: Color) -> void:
+    draw_colored_polygon(PackedVector2Array([
+        center + Vector2(0.0, -3.5),
+        center + Vector2(3.5, 0.0),
+        center + Vector2(0.0, 3.5),
+        center + Vector2(-3.5, 0.0)
+    ]), Color("#263538"))
+    draw_colored_polygon(PackedVector2Array([
+        center + Vector2(0.0, -2.5),
+        center + Vector2(2.5, 0.0),
+        center + Vector2(0.0, 2.5),
+        center + Vector2(-2.5, 0.0)
+    ]), color)
+
 func _draw_roundabouts_signals_and_directions() -> void:
     for raw_cell: Variant in simulation.roundabouts.keys():
         var cell: Vector2i = raw_cell as Vector2i
         var center: Vector2 = simulation.cell_to_world(cell)
 
-        # Rotunda muito maior: o círculo tapa completamente o antigo cruzamento
-        # e deixa uma pista circular larga e legível.
         draw_circle(center + Vector2(2.5, 4.0), ROTUNDA_RAIO_EXTERIOR + 2.0, Color(0.0, 0.0, 0.0, 0.20))
         draw_circle(center, ROTUNDA_RAIO_EXTERIOR, Color("#202D31"))
         draw_circle(center, ROTUNDA_RAIO_PISTA, Color("#334248"))
-
-        # Linha circular de circulação que coincide com a trajetória dos carros.
         draw_arc(center, ROTUNDA_RAIO_TRAJETO, 0.0, TAU, 56, Color(0.88, 0.88, 0.80, 0.42), 1.2, true)
 
         draw_circle(center, ROTUNDA_RAIO_ILHA + 2.0, Color("#253236"))
