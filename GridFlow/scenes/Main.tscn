@@ -1,6 +1,10 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource path="res://scripts/main_pt.gd" type="Script" id="1_main"]
+[ext_resource path="res://scripts/account_gate.gd" type="Script" id="2_account"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")
+
+[node name="AccountGate" type="CanvasLayer" parent="."]
+script = ExtResource("2_account")
