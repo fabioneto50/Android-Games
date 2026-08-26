@@ -6,6 +6,7 @@ var help_label: Label
 var toast_label: Label
 var speed_button: Button
 var pause_button: Button
+var green_button: Button
 var flow_bar: ProgressBar
 var mode_buttons: Dictionary = {}
 var game_over_panel: PanelContainer
@@ -55,13 +56,13 @@ func _build_interface() -> void:
     top_row.add_child(title)
 
     var status_column := VBoxContainer.new()
-    status_column.custom_minimum_size = Vector2(604.0, 48.0)
+    status_column.custom_minimum_size = Vector2(506.0, 48.0)
     status_column.add_theme_constant_override("separation", 2)
     top_row.add_child(status_column)
 
     status_label = Label.new()
-    status_label.add_theme_font_size_override("font_size", 13)
-    status_label.custom_minimum_size = Vector2(604.0, 24.0)
+    status_label.add_theme_font_size_override("font_size", 12)
+    status_label.custom_minimum_size = Vector2(506.0, 24.0)
     status_column.add_child(status_label)
 
     flow_bar = ProgressBar.new()
@@ -69,8 +70,14 @@ func _build_interface() -> void:
     flow_bar.max_value = 100.0
     flow_bar.value = 100.0
     flow_bar.show_percentage = false
-    flow_bar.custom_minimum_size = Vector2(604.0, 12.0)
+    flow_bar.custom_minimum_size = Vector2(506.0, 12.0)
     status_column.add_child(flow_bar)
+
+    green_button = Button.new()
+    green_button.text = "GREEN x1"
+    green_button.custom_minimum_size = Vector2(92.0, 48.0)
+    green_button.pressed.connect(simulation.activate_green_corridor)
+    top_row.add_child(green_button)
 
     pause_button = Button.new()
     pause_button.text = "PAUSE"
@@ -270,7 +277,7 @@ func _on_hud_updated(snapshot: Dictionary) -> void:
         return
 
     var rush_text: String = " RUSH" if bool(snapshot.rush) else ""
-    status_label.text = "%s%s  FLOW %d%%  W%d  ROAD %d  SIG %d  RBT %d  BRG %d  LANE %d  POP %d" % [
+    status_label.text = "%s%s  F%d%% W%d  RD%d S%d R%d B%d L%d  EMS%d  POP%d" % [
         String(snapshot.time),
         rush_text,
         int(snapshot.flow),
@@ -280,12 +287,16 @@ func _on_hud_updated(snapshot: Dictionary) -> void:
         int(snapshot.roundabouts),
         int(snapshot.bridges),
         int(snapshot.lane_upgrades),
+        int(snapshot.emergency_active),
         int(snapshot.population)
     ]
     flow_bar.value = float(snapshot.flow)
     speed_button.text = "%dx" % int(snapshot.speed)
     pause_button.text = "RESUME" if bool(snapshot.paused) else "PAUSE"
     pause_button.disabled = bool(snapshot.upgrade_pending)
+
+    green_button.text = "GREEN x%d" % int(snapshot.green)
+    green_button.disabled = int(snapshot.green) <= 0 or int(snapshot.emergency_active) <= 0 or bool(snapshot.upgrade_pending)
 
 func _show_toast(message: String) -> void:
     toast_label.text = message
@@ -319,9 +330,10 @@ func _on_game_over(snapshot: Dictionary) -> void:
     upgrade_panel.visible = false
     game_over_panel.visible = true
     var stats: Label = game_over_panel.find_child("GameStats", true, false) as Label
-    stats.text = "Population %d  |  Trips %d  |  Week %d\nFinal score: %d" % [
+    stats.text = "Population %d | Trips %d | Emergencies %d | Week %d\nFinal score: %d" % [
         int(snapshot.population),
         int(snapshot.trips),
+        int(snapshot.emergency_completed),
         int(snapshot.week),
         int(snapshot.score)
     ]
